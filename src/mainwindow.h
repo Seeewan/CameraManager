@@ -175,6 +175,9 @@ private:
     void loadTrackPointSettingsFromFile(QString& filepath);
     void saveTrackPointSettingsToFile(QString& filepath, TrackPointProperty& props);
     void setupTrackPointTab();
+    QString cameraPresetDirectory() const;
+    QString cameraPresetFilePath(const QString& presetName) const;
+    QStringList availableCameraPresets() const;
 
     // Armand & Nathan - Checks if files exist and notify user if not
     void checkFiles();

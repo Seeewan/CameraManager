@@ -18,6 +18,7 @@
 #include <QtWidgets/QTreeWidget>
 #include <QtWidgets/QCheckBox>
 #include <QtWidgets/QSlider>
+#include <QHash>
 #include <QtWidgets/qpushbutton.h>
 #include <algorithm>
 #include <iostream>
@@ -238,8 +239,16 @@ class AbstractCameraManager : public QObject {
         void cameraTree_recursiveSetSpinProperty(QStandardItem* parent, CameraManagerSpin::SpinCameraProperty* prop);
         void cameraTree_getCameraList(QStandardItem* parent, std::vector<QStandardItem*> *list);
         AbstractCamera* getSelectedCamera();
+        QString buildCameraDeviceKey(AbstractCamera* camera) const;
+        QString getDefaultCameraName(const QString& deviceKey);
+        QString getCurrentCameraName(const QString& deviceKey);
+        void assignCameraName(AbstractCamera* camera, const QString& requestedName, bool resetToDefault = false);
+        void refreshActiveCameraTitles(AbstractCamera* camera, QStandardItem* item);
     private:
         std::string getTime();
+        QHash<QString, QString> defaultCameraNamesByDeviceKey;
+        QHash<QString, QString> currentCameraNamesByDeviceKey;
+        int nextCameraIndex = 0;
 };
 
 #endif // ABSTRACTCAMERAMANAGER_H

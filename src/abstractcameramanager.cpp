@@ -25,7 +25,7 @@ AbstractCameraManager::AbstractCameraManager(bool empty) : liveView(false), came
     if(empty) return;
     QObject::connect(&cameraTree, SIGNAL(itemChanged(QStandardItem*)), this, SLOT(on_CameraTree_itemChanged(QStandardItem*)));
     //cameraTree.setColumnCount(4);
-    cameraTree.setHorizontalHeaderLabels(QStringList() << "Cameras" << "Serial" << "Model" << "Custom Name");
+    cameraTree.setHorizontalHeaderLabels(QStringList() << "Camera" << "Serial" << "Model");
     //cameraTree.setHorizontalHeaderItem(0, new QStandardItem("Hallo"));
     newCameraList.setText("Detected Cameras");
     newCameraList.setEditable(false);
@@ -123,6 +123,47 @@ std::string AbstractCameraManager::getTime()
     }
     qInfo() << stringTime;
     return stringTime;
+}
+
+QString AbstractCameraManager::buildCameraDeviceKey(AbstractCamera* camera) const {
+    if (camera == nullptr) return QString();
+    return QString::fromStdString(camera->getString()) + "|" + camera->getSerial() + "|" + camera->getModel();
+}
+
+QString AbstractCameraManager::getDefaultCameraName(const QString& deviceKey) {
+    if (!defaultCameraNamesByDeviceKey.contains(deviceKey)) {
+        defaultCameraNamesByDeviceKey.insert(deviceKey, QString("Camera%1").arg(nextCameraIndex++));
+    }
+    return defaultCameraNamesByDeviceKey.value(deviceKey);
+}
+
+QString AbstractCameraManager::getCurrentCameraName(const QString& deviceKey) {
+    if (!currentCameraNamesByDeviceKey.contains(deviceKey)) {
+        currentCameraNamesByDeviceKey.insert(deviceKey, getDefaultCameraName(deviceKey));
+    }
+    return currentCameraNamesByDeviceKey.value(deviceKey);
+}
+
+void AbstractCameraManager::assignCameraName(AbstractCamera* camera, const QString& requestedName, bool resetToDefault) {
+    if (camera == nullptr) return;
+    const QString deviceKey = buildCameraDeviceKey(camera);
+    const QString defaultName = getDefaultCameraName(deviceKey);
+    QString effectiveName = resetToDefault ? defaultName : requestedName.trimmed();
+    if (effectiveName.isEmpty()) {
+        effectiveName = defaultName;
+    }
+    currentCameraNamesByDeviceKey.insert(deviceKey, effectiveName);
+    camera->setCustomName(effectiveName);
+}
+
+void AbstractCameraManager::refreshActiveCameraTitles(AbstractCamera* camera, QStandardItem* item) {
+    if (camera == nullptr || item == nullptr) return;
+    const QString displayName = item->text();
+    for (int i = activeCameras.size() - 1; i >= 0; --i) {
+        if (activeCameras.at(i).camera != camera) continue;
+        activeCameras.at(i).window->setWindowTitle(displayName);
+        activeCameras.at(i).coloredWindow->setWindowTitle(displayName + " (Color)");
+    }
 }
 
 void AbstractCameraManager::updateProperties() {
@@ -480,16 +521,14 @@ QModelIndex AbstractCameraManager::detectNewCamerasAndExpand(SystemManager *sm) 
                 continue;
             }
             SpinCamera* fly = new SpinCamera(camPtr);
-            const QString deviceId = QString::fromStdString(fly->getString());
-            const QString serial = fly->getSerial();
-            const QString model = fly->getModel();
-            const QString deviceKey = deviceId + "|" + serial + "|" + model;
+            const QString deviceKey = buildCameraDeviceKey(fly);
             if (seenDeviceKeys.contains(deviceKey)) {
                 delete fly;
                 continue;
             }
             seenDeviceKeys.insert(deviceKey);
             detectedDevices.push_back(deviceKey);
+            assignCameraName(fly, getCurrentCameraName(deviceKey));
             newCameras.push_back(fly);
         } catch (const Spinnaker::Exception& e) {
             std::cout << "[detect] Spinnaker exception at index " << i << ": " << e.what() << std::endl;
@@ -545,12 +584,12 @@ QModelIndex AbstractCameraManager::detectNewCamerasAndExpand(SystemManager *sm) 
         AbstractCamera* cam = newCameras.at(i);
         //QStandardItem* item = new QStandardItem(cam->getString().c_str());
         QList<QStandardItem*> items;
-        QStandardItem* item = new QStandardItem(QString::fromStdString(cam->getString()));
+        QStandardItem* item = new QStandardItem(cam->getCustomName());
         item->setData(QVariant::fromValue(reinterpret_cast<quintptr>(cam)), CameraRole);
         item->setCheckable(true);
         item->setCheckState(Qt::Unchecked);
         item->setDropEnabled(false);
-        item->setEditable(false);
+        item->setEditable(true);
         items.append(item);
 
         item = new QStandardItem(cam->getSerial());
@@ -562,8 +601,6 @@ QModelIndex AbstractCameraManager::detectNewCamerasAndExpand(SystemManager *sm) 
         item->setData(QVariant::fromValue(reinterpret_cast<quintptr>(cam)), CameraRole);
         item->setEditable(false);
         items.append(item);
-
-        items.append(new QStandardItem(cam->getCustomName()));
 
         newCameraList.appendRow(items);
     }
@@ -597,7 +634,9 @@ void AbstractCameraManager::resetItem(QModelIndex index){
     QStandardItem * item = getModel()->itemFromIndex( index );
     if( item == NULL || !item->data(CameraRole).isValid() ) return;
     AbstractCamera* cam = reinterpret_cast<AbstractCamera *>(item->data(CameraRole).value<quintptr>());
-    item->setText(cam->getString().c_str());
+    assignCameraName(cam, QString(), true);
+    item->setText(cam->getCustomName());
+    refreshActiveCameraTitles(cam, item);
 }
 
 void AbstractCameraManager::activateCamera(AbstractCamera* camera, QStandardItem* item, bool active){
@@ -605,7 +644,7 @@ void AbstractCameraManager::activateCamera(AbstractCamera* camera, QStandardItem
     int i = activeCameras.size() - 1;
     while (i >= 0 && activeCameras.at(i).camera != camera) --i;
 
-    if (i >= 0){
+        if (i >= 0){
         if (!active) {
             activeCameraEntry* entry = &activeCameras.at(i);
             entry->camera->stopAutoCapture();
@@ -614,7 +653,7 @@ void AbstractCameraManager::activateCamera(AbstractCamera* camera, QStandardItem
             activeCameras.erase(activeCameras.begin()+i);
         } else {
             activeCameras.at(i).window->setWindowTitle(item->text());
-            activeCameras.at(i).coloredWindow->setWindowTitle(item->text());
+            activeCameras.at(i).coloredWindow->setWindowTitle(item->text() + " (Color)");
         }
     } else {
         if (active) {
@@ -622,14 +661,14 @@ void AbstractCameraManager::activateCamera(AbstractCamera* camera, QStandardItem
 
 
             connect(entry.window, SIGNAL(destroyed(QObject*)), this, SLOT(on_subwindow_closing(QObject*)));
-            entry.window->setWindowTitle(camera->getString().c_str());
+            entry.window->setWindowTitle(item->text());
             if(!mainWindow->isColorModeActivate()) mainWindow->modifySubWindow(entry.window, true);
             VideoOpenGLWidget* videoWidget = qobject_cast<VideoOpenGLWidget*>(entry.window->widget());
             camera->setVideoContainer(videoWidget);
 
             connect(entry.coloredWindow, SIGNAL(destroyed(QObject*)), this, SLOT(on_subwindow_closing(QObject*)));
-            QString coloredName = QString::fromStdString(camera->getString().c_str());
-            coloredName.append(" COLORED");
+            QString coloredName = item->text();
+            coloredName.append(" (Color)");
             entry.coloredWindow->setWindowTitle(coloredName);
             if(mainWindow->isColorModeActivate()) mainWindow->modifySubWindow(entry.coloredWindow, true);
             VideoOpenGLWidget* coloredVideoWidget = qobject_cast<VideoOpenGLWidget*>(entry.coloredWindow->widget());
@@ -687,6 +726,17 @@ void AbstractCameraManager::on_subwindow_closing(QObject *window) {
 }
 
 void AbstractCameraManager::on_CameraTree_itemChanged(QStandardItem* item) {
+    if (item == nullptr) return;
+    if (item->data(CameraRole).isValid() && item->column() == 0) {
+        AbstractCamera* camera = reinterpret_cast<AbstractCamera*>(item->data(CameraRole).value<quintptr>());
+        assignCameraName(camera, item->text());
+        const QString effectiveName = camera->getCustomName();
+        if (item->text() != effectiveName) {
+            QSignalBlocker modelBlocker(&cameraTree);
+            item->setText(effectiveName);
+        }
+        refreshActiveCameraTitles(camera, item);
+    }
     Qt::CheckState checked = item->checkState();
     if( item->data(CameraRole).isValid() ){
         activateCamera(reinterpret_cast<AbstractCamera*>(item->data(CameraRole).value<quintptr>()), item, checked == Qt::Checked);
@@ -698,6 +748,9 @@ void AbstractCameraManager::on_CameraTree_itemChanged(QStandardItem* item) {
 void AbstractCameraManager::cameraTree_itemClicked(const QModelIndex &index, QString &string, int &icon, bool &editable, bool &deleteable){
 
     QStandardItem* clicked = getModel()->itemFromIndex(index);
+    if (clicked != nullptr && clicked->data(CameraRole).isValid() && index.column() != 0) {
+        clicked = getModel()->itemFromIndex(index.siblingAtColumn(0));
+    }
     selectedItem = clicked;
     QStandardItem* first = nullptr;
 
@@ -709,10 +762,7 @@ void AbstractCameraManager::cameraTree_itemClicked(const QModelIndex &index, QSt
         icon = 0;
         deleteable = false;
         first = clicked;
-        QModelIndex textIndex = getModel()->index(index.row(), 1, index.parent());
-        string = getModel()->itemFromIndex(textIndex)->text() + " - ";
-        textIndex = getModel()->index(index.row(), 2, index.parent());
-        string.append(getModel()->itemFromIndex(textIndex)->text());
+        string = clicked->text();
     } else {
 
         if (clicked == &newCameraList) {

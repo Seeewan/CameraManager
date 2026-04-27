@@ -10,6 +10,8 @@
 #include <QIcon>
 #include <QDebug>
 #include <QDir>
+#include <QInputDialog>
+#include <QRegularExpression>
 #include <QApplication>
 #include <QtWidgets/QFileDialog>
 #include <QFileInfo>
@@ -129,8 +131,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
 
     /* Thread to detect automatically new cameras*/
     //connect(&tdc, SIGNAL(resizeCameraTree()), this, SLOT(resizeColumnsCameraTree()));
-    ui->cameraTree->setColumnWidth(0, 60);
-    ui->cameraTree->setColumnWidth(1, 70);
+    ui->cameraTree->setColumnWidth(0, 140);
+    ui->cameraTree->setColumnWidth(1, 90);
+    ui->cameraTree->setColumnWidth(2, 180);
 
     //system = new SystemManager();
 
@@ -317,12 +320,16 @@ void MainWindow::on_addGroup() {
 
 /* Rename group or camera in Camera Tree */
 void MainWindow::on_editItem() {
-    ui->cameraTree->edit(ui->cameraTree->currentIndex());
+    QModelIndex current = ui->cameraTree->currentIndex();
+    if (!current.isValid()) return;
+    ui->cameraTree->edit(current.siblingAtColumn(0));
 }
 
 /* Put back initial camera or group name in Camera Tree */
 void MainWindow::on_resetItem() {
-    cameraManagers.at(selectedCameraManager)->resetItem(ui->cameraTree->currentIndex());
+    QModelIndex current = ui->cameraTree->currentIndex();
+    if (!current.isValid()) return;
+    cameraManagers.at(selectedCameraManager)->resetItem(current.siblingAtColumn(0));
 }
 
 /* Remove group in CameraTree */
@@ -347,7 +354,10 @@ void MainWindow::cameraTree_itemClicked(const QModelIndex index) {
 
 void MainWindow::cameraTree_itemDoubleClicked(const QModelIndex index) {
     QStandardItem* clicked = cameraManagers.at(selectedCameraManager)->getModel()->itemFromIndex(index);
-    if (index.column() == 0) return;
+    if (index.column() == 0) {
+        ui->cameraTree->edit(index);
+        return;
+    }
     if (clicked->data(CameraRole).isValid()) {
         AbstractCamera* camera = (clicked == nullptr) ? nullptr : reinterpret_cast<AbstractCamera*>(clicked->data(CameraRole).value<quintptr>());
         for (int i = 0; i < cameraManagers.at(selectedCameraManager)->getActiveCameraEntries().size(); i++) {
@@ -834,20 +844,41 @@ void MainWindow::on_TrackPointSliderValueChanged(int value) {
 }
 
 void MainWindow::quickSaveCameraSettings() {
-    QString quickFile(QDir::currentPath() + "/" + PROPERTY_PATH + "/" + CAMERA_PROPERTY_QUICK_FILE);
-    cameraManagers[selectedCameraManager]->saveSpinPropertiesToFile(quickFile);
+    QDir presetDir(cameraPresetDirectory());
+    if (!presetDir.exists() && !presetDir.mkpath(".")) {
+        QMessageBox::warning(this, "Quick Save", "Unable to create the camera presets folder.");
+        return;
+    }
+
+    bool ok = false;
+    QString presetName = QInputDialog::getText(this, "Quick Save", "Preset name:", QLineEdit::Normal, "", &ok).trimmed();
+    if (!ok || presetName.isEmpty()) return;
+
+    QString presetFile = cameraPresetFilePath(presetName);
+    if (QFileInfo::exists(presetFile)) {
+        const auto answer = QMessageBox::question(this, "Quick Save",
+                                                  QString("The preset \"%1\" already exists. Overwrite it?").arg(presetName));
+        if (answer != QMessageBox::Yes) return;
+    }
+
+    cameraManagers[selectedCameraManager]->saveSpinPropertiesToFile(presetFile);
 }
 
 void MainWindow::quickLoadCameraSettings() {
-    QString quickFile(QDir::currentPath() + "/" + PROPERTY_PATH + "/" + CAMERA_PROPERTY_QUICK_FILE);
-    QFile file(quickFile);
-    if (!file.exists()) {
-        QMessageBox::information(this, "Error", "No quicksave-file exists!");
-    } else {
-        std::vector<SpinCameraProperty> prop;
-        cameraManagers[selectedCameraManager]->loadSpinPropertiesFromFile(quickFile, prop);
-        cameraManagers[selectedCameraManager]->updateSpinProperties(prop);
+    const QStringList presets = availableCameraPresets();
+    if (presets.isEmpty()) {
+        QMessageBox::information(this, "Quick Load", "No camera preset has been saved yet.");
+        return;
     }
+
+    bool ok = false;
+    QString presetName = QInputDialog::getItem(this, "Quick Load", "Choose a preset:", presets, 0, false, &ok);
+    if (!ok || presetName.isEmpty()) return;
+
+    std::vector<SpinCameraProperty> prop;
+    QString presetFile = cameraPresetFilePath(presetName);
+    cameraManagers[selectedCameraManager]->loadSpinPropertiesFromFile(presetFile, prop);
+    cameraManagers[selectedCameraManager]->updateSpinProperties(prop);
 }
 
 void MainWindow::quickSaveTrackPointSettings() {
@@ -898,6 +929,26 @@ void MainWindow::quickLoadTrackPointSettings() {
         ui->minSepSlider->setValue(trackPointProperty.minSepValue);
         ui->minSepSlider->setRange(trackPointProperty.minSepMin, trackPointProperty.minSepMax);
     }
+}
+
+QString MainWindow::cameraPresetDirectory() const {
+    return QDir::currentPath() + "/" + PROPERTY_PATH + "/camera_presets";
+}
+
+QString MainWindow::cameraPresetFilePath(const QString& presetName) const {
+    QString safeName = presetName.trimmed();
+    safeName.replace(QRegularExpression(R"([\\/:*?"<>|])"), "_");
+    return cameraPresetDirectory() + "/" + safeName + ".ini";
+}
+
+QStringList MainWindow::availableCameraPresets() const {
+    QDir presetDir(cameraPresetDirectory());
+    QStringList presets;
+    const QFileInfoList files = presetDir.entryInfoList(QStringList() << "*.ini", QDir::Files, QDir::Name);
+    for (const QFileInfo& file : files) {
+        presets.push_back(file.completeBaseName());
+    }
+    return presets;
 }
 
 void MainWindow::loadTrackPointSettingsFromFile(QString& filepath) {
