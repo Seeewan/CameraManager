@@ -1,13 +1,21 @@
 
-// Written by: Lars Aksel Tveråmo
+// Written by: Lars Aksel Tvermo
 // 3D Motion Technologies AS
 
 #ifndef IMAGEVIEWERWIDGET_H
 #define IMAGEVIEWERWIDGET_H
 
 #include <QtWidgets/QMdiSubWindow>
+#include <QtWidgets/QCheckBox>
+#include <QtWidgets/QComboBox>
+#include <QtWidgets/QDialog>
+#include <QtWidgets/QFileDialog>
 #include <QString>
 #include <QtWidgets/QLabel>
+#include <QtWidgets/QLineEdit>
+#include <QtWidgets/QRadioButton>
+#include <QtWidgets/QSlider>
+#include <QtWidgets/QSpinBox>
 #include <QSize>
 #include <QPoint>
 #include <QtWidgets/qgridlayout.h>

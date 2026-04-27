@@ -18,7 +18,7 @@ CalibrationFile::CalibrationFile(QString filePath) : filePath(filePath) {
     textEdit.setPlainText(fileContain);
 
     for (int i = 0; i < camCombs.size(); i++) {
-        if (!camCombs[i]->status == TrackPoint::CalibrationStatus::OK) continue;
+        if (camCombs[i]->status != TrackPoint::CalibrationStatus::OK) continue;
         //printf("Combination: %u_%u_%u\n", camCombs[i]->camNumbers[0], camCombs[i]->camNumbers[1], camCombs[i]->camNumbers[2]);
         for (int cam = 0; cam < 3; cam++) {
             TrackPoint::Camera* thisCam = camCombs[i]->cameras[cam];
@@ -30,7 +30,7 @@ CalibrationFile::CalibrationFile(QString filePath) : filePath(filePath) {
 
 CalibrationFile::~CalibrationFile() {
     for (int i = 0; i < camCombs.size(); i++) {
-        if (!camCombs[i]->status == TrackPoint::CalibrationStatus::OK) continue;
+        if (camCombs[i]->status != TrackPoint::CalibrationStatus::OK) continue;
         for (int j = 0; j < 3; j++) {
             delete camCombs[i]->cameras[j];
         }
@@ -413,7 +413,7 @@ bool CalibrationFile::parseCalibrationData(QString& data) {
 
 void CalibrationFile::calculateFov() {
     for (int i = 0; i < camCombs.size(); i++) {
-        if (!camCombs[i]->status == TrackPoint::CalibrationStatus::OK) continue;
+        if (camCombs[i]->status != TrackPoint::CalibrationStatus::OK) continue;
         for (int cam = 0; cam < 3; cam++) {
             TrackPoint::Camera* thisCam = camCombs[i]->cameras[cam];
             if (thisCam == nullptr) continue;

@@ -1,5 +1,7 @@
 #include <iostream>
+#include <QByteArray>
 #include <QDebug>
+#include <QMetaObject>
 #include "abstractcamera.h"
 
 AbstractCamera::AbstractCamera() : thread(this) {
@@ -34,11 +36,18 @@ void AbstractCamera::sendFrame(void* imgBuffer, unsigned int bufferSize, unsigne
      * 13/05/2024
      * Modified by Nathan & Armand - added a verification to prevent updating a widget that isnt opened (and therefore crashed the application)
     */
-    if (!colored && container->isVisible()) {
-        container->updateImage((unsigned char*)imgBuffer, bufferSize, imageWidth, imageHeight);
-    }else if(colored && coloredContainer->isVisible()){
-        coloredContainer->updateImage((unsigned char*)imgBuffer, bufferSize, imageWidth, imageHeight);
+    VideoOpenGLWidget* targetWidget = colored ? coloredContainer : container;
+    if (targetWidget == nullptr || imgBuffer == nullptr || bufferSize == 0) {
+        return;
     }
+
+    QByteArray frameCopy(reinterpret_cast<const char*>(imgBuffer), static_cast<int>(bufferSize));
+    QMetaObject::invokeMethod(targetWidget, [targetWidget, frameCopy, bufferSize, imageWidth, imageHeight]() mutable {
+        if (!targetWidget->isVisible()) {
+            return;
+        }
+        targetWidget->updateImage(reinterpret_cast<unsigned char*>(frameCopy.data()), bufferSize, imageWidth, imageHeight);
+    }, Qt::QueuedConnection);
 }
 
 

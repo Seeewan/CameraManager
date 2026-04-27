@@ -1,11 +1,11 @@
 
-// Written by: Lars Aksel Tveråmo
+// Written by: Lars Aksel Tvermo
 // 3D Motion Technologies AS
 
 #ifndef WIDGETGL_H
 #define WIDGETGL_H
 
-#include <QtOpenGL/QtOpenGL>
+#include <QOpenGLWidget>
 #include <QThread>
 #include <QtCore/qmath.h>
 #include <QMouseEvent>
@@ -17,7 +17,11 @@
 #include <Windows.h>
 #endif
 
+#if defined(__APPLE__)
+#include <OpenGL/glu.h>
+#else
 #include <GL/glu.h>
+#endif
 
 #include "socketviewerwidget.h"
 #include "calibrationfile.h"

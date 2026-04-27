@@ -205,6 +205,7 @@ private:
     ThreadDetectCamera tdc;
 
     QTimer *timer = new QTimer();
+    QTimer *propertiesTimer = new QTimer();
 
     //classe a remettre en commentaire si bug
     bool detectCameras;

@@ -2,7 +2,7 @@
 #define DISPLAYWINDOW_H
 
 
-#include <QtOpenGLWidgets/QOpenGLWidget>
+#include <QOpenGLWidget>
 #include <QOpenGLFunctions_2_0>
 #include <QOpenGLFunctions>
 #include <QDebug>
@@ -12,9 +12,13 @@
 #include <QColor>
 #if defined(WIN32) || defined(_WIN32)
 #include <Windows.h>
-#include <qpainter.h>
+#include <QPainter>
 #endif
+#if defined(__APPLE__)
+#include <OpenGL/glu.h>
+#else
 #include <GL/glu.h>
+#endif
 #include "data.h"
 #include "marker.h"
 
@@ -582,4 +586,3 @@ protected:
 };
 
 #endif // DISPLAYWINDOW_H
-

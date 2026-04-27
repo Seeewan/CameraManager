@@ -1,15 +1,13 @@
 
-// Written by: Lars Aksel Tveråmo
+// Written by: Lars Aksel Tvermo
 // 3D Motion Technologies AS
 
 #ifndef TEXTURE_H
 #define TEXTURE_H
 
 //#include <FreeImage.h>
-#include <QtOpenGL>
+#include <qopengl.h>
 #include "databuffer.h"
-
-//#include <QtOpenGL/qgl.h>
 
 //RAJOUT HUGO
 #include <iostream>

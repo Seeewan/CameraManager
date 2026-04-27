@@ -1,8 +1,24 @@
 #include "mainwindow.h"
+#include <QCoreApplication>
 #include <QtWidgets/qapplication.h>
+#include <QDir>
+#include <QStyleFactory>
+
+namespace {
+QString resolveRuntimeRoot() {
+    QDir dir(QCoreApplication::applicationDirPath());
+    while (dir.exists() && !dir.exists("CameraManager")) {
+        if (!dir.cdUp()) {
+            break;
+        }
+    }
+    return dir.exists("CameraManager") ? dir.absolutePath() : QCoreApplication::applicationDirPath();
+}
+}
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+    QDir::setCurrent(resolveRuntimeRoot());
 
     app.setStyle(QStyleFactory::create("Fusion"));
 

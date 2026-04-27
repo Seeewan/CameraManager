@@ -43,7 +43,11 @@ namespace CameraManagerSpin {
 	    bool getAuto(){ return isAuto; }
         bool getCanAuto(){ return canAuto; }
         bool getOnOff(){ return onOff; }
-	    void setValue(float value){ val = value; }
+        void setValue(float value){ val = value; }
+        void setRange(double minimum, double maximum) { min = minimum; max = maximum; }
+        void setCanAuto(bool enabled) { canAuto = enabled; }
+        void setOnOff(bool enabled) { onOff = enabled; }
+        void setDecimals(int precision) { decimals = precision; }
         double getValue() { return val; }
         double getDecimals() { return decimals; }
 

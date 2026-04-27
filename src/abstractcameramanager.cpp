@@ -3,6 +3,8 @@
 #include "mainwindow.h"
 #include "spincamera.h"
 #include "mainwindow.h"
+#include <QFileDialog>
+#include <iostream>
 
 using namespace CameraManager;
 using namespace CameraManagerSpin;
@@ -25,6 +27,8 @@ AbstractCameraManager::AbstractCameraManager(bool empty) : liveView(false), came
     //cameraTree.setColumnCount(4);
     cameraTree.setHorizontalHeaderLabels(QStringList() << "Cameras" << "Serial" << "Model" << "Custom Name");
     //cameraTree.setHorizontalHeaderItem(0, new QStandardItem("Hallo"));
+    newCameraList.setText("Detected Cameras");
+    newCameraList.setEditable(false);
     cameraTree.appendRow(&newCameraList);
     //newCameraList.setIcon(QIcon(":/icons/folder_home"));
     newCameraList.setCheckable(true);
@@ -129,11 +133,12 @@ void AbstractCameraManager::updateProperties() {
         QCheckBox* checkBox = qobject_cast<QCheckBox*>(propertiesList.itemWidget(item, Ui::PropertyAuto));
         CameraManager::CameraProperty * prop = reinterpret_cast<CameraManager::CameraProperty*>(checkBox->property("CameraProperty").value<quintptr>());
         QSlider* slider = reinterpret_cast<QSlider*>(checkBox->property("TreeWidgetSlider").value<quintptr>());
+        QSignalBlocker checkBoxBlocker(checkBox);
         qDebug() << "updating:" << prop->getName();
 
         // Lars Aksel - 09.02.2015 - Changed from updateProperties to setProperties
-        //selected->updateProperty(prop);
-        selected->setProperty(prop);
+        // This path is used as a UI refresh loop; do not push properties back to the camera here.
+        // Property writes are handled by explicit user actions in the corresponding slots.
 
         item->setText(Ui::PropertyWriteValue, prop->formatValue());
         checkBox->setChecked(prop->getAuto());
@@ -147,6 +152,7 @@ void AbstractCameraManager::updateProperties() {
         if (valueBox != nullptr) valueBox->setText(val);
 
         if( prop->getType() == CameraManager::AUTOTRIGGER ) continue;
+        QSignalBlocker sliderBlocker(slider);
         slider->setValue(prop->getValueToSlider());
         slider->setEnabled(!prop->getAuto());
     }
@@ -161,16 +167,26 @@ void AbstractCameraManager::updateSpinProperties() {
     }
     for( int i = propertiesList.topLevelItemCount()-1; i>=0; i--){
         QTreeWidgetItem* item = propertiesList.topLevelItem(i);
-        QCheckBox* checkBox = qobject_cast<QCheckBox*>(propertiesList.itemWidget(item, Ui::PropertyAuto));
-        CameraManagerSpin::SpinCameraProperty * prop = reinterpret_cast<CameraManagerSpin::SpinCameraProperty*>(checkBox->property("CameraProperty").value<quintptr>());
-        QSlider* slider = reinterpret_cast<QSlider*>(checkBox->property("TreeWidgetSlider").value<quintptr>());
+        auto* checkBox = qobject_cast<QCheckBox*>(propertiesList.itemWidget(item, Ui::PropertyAuto));
+        CameraManagerSpin::SpinCameraProperty * prop =
+            reinterpret_cast<CameraManagerSpin::SpinCameraProperty*>(item->data(Ui::PropertyName, Qt::UserRole).value<quintptr>());
+        if (prop == nullptr) continue;
+
+        const bool isTriggerToggle =
+            prop->getType() == CameraManagerSpin::AUTOTRIGGER ||
+            prop->getType() == CameraManagerSpin::TRIGGER;
+        const bool supported = selected->refreshSpinPropertyMetadata(prop);
 
         // Lars Aksel - 09.02.2015 - Changed from updateProperties to setProperties
-        //selected->updateProperty(prop);
-        selected->setSpinProperty(prop);
+        // This path is used as a UI refresh loop; do not push properties back to the camera here.
+        // Property writes are handled by explicit user actions in the corresponding slots.
 
         item->setText(Ui::PropertyWriteValue, prop->formatValue());
-        checkBox->setChecked(prop->getAuto());
+        if (checkBox != nullptr) {
+            QSignalBlocker checkBoxBlocker(checkBox);
+            checkBox->setChecked(prop->getAuto());
+            checkBox->setEnabled(supported && (isTriggerToggle || prop->getCanAuto()));
+        }
 
         CameraManagerSpin::SpinCameraProperty readProp(prop->getType(), prop->getName(), prop->getMin(), prop->getMax(), prop->getDecimals(), prop->getCanAuto(), prop->getAuto(), prop->getOnOff(), prop->getValue());
         //selected->getProperty(&readProp);
@@ -180,9 +196,21 @@ void AbstractCameraManager::updateSpinProperties() {
         QLineEdit* valueBox = (QLineEdit*) propertiesList.itemWidget(item, Ui::PropertyReadValue);
         if (valueBox != nullptr) valueBox->setText(val);
 
-        if( prop->getType() == CameraManagerSpin::AUTOTRIGGER || prop->getType() == CameraManagerSpin::TRIGGER) continue;
+        if (isTriggerToggle) continue;
+        QLineEdit* writeValueBox = qobject_cast<QLineEdit*>(propertiesList.itemWidget(item, Ui::PropertyWriteValue));
+        if (writeValueBox != nullptr) {
+            writeValueBox->setEnabled(supported);
+            auto* validator = new QDoubleValidator(prop->getMin(), prop->getMax(), prop->getDecimals(), writeValueBox);
+            validator->setLocale(QLocale(QLocale::English, QLocale::UnitedStates));
+            writeValueBox->setValidator(validator);
+            writeValueBox->setText(prop->formatValue());
+        }
+        QSlider* slider = qobject_cast<QSlider*>(propertiesList.itemWidget(item, Ui::PropertySlider));
+        if (slider == nullptr) continue;
+        QSignalBlocker sliderBlocker(slider);
         slider->setValue(prop->getValueToSlider());
-        slider->setEnabled(!prop->getAuto());
+        slider->setRange(prop->getMinToSlider(), prop->getMaxToSLider());
+        slider->setEnabled(supported && !prop->getAuto());
     }
 }
 
@@ -199,7 +227,7 @@ void setPropFromSettings(QSettings& settings, std::vector<CameraProperty>& prop,
         settings.value("value").toFloat());
     for (unsigned int i = 0; i < prop.size(); i++) {
         if (prop[i].getType() == val) {
-            memcpy(&prop[i], &camProp, sizeof(camProp));
+            prop[i] = camProp;
             break;
         }
     }
@@ -219,7 +247,7 @@ void    setSpinPropFromSettings(QSettings& settings, std::vector<SpinCameraPrope
         settings.value("value").toFloat());
     for (unsigned int i = 0; i < prop.size(); i++) {
         if (prop[i].getType() == val) {
-            memcpy(&prop[i], &camProp, sizeof(camProp));
+            prop[i] = camProp;
             break;
         }
     }
@@ -427,15 +455,61 @@ QModelIndex AbstractCameraManager::detectNewCamerasAndExpand(SystemManager *sm) 
     std::vector<QStandardItem*> oldCameras;
     cameraTree_getCameraList(cameraTree.invisibleRootItem(), &oldCameras);
 
+    if (sm == nullptr || !sm->isValid()) {
+        return newCameraList.index();
+    }
+
     // Armand & Nathan on 13/05/2024
 
-    unsigned int numCameras = sm->getCamList().GetSize();
+    CameraList camList = sm->getCamList();
+    unsigned int numCameras = camList.GetSize();
+    static int lastReportedCount = -1;
+    static QStringList lastReportedDevices;
+    if (static_cast<int>(numCameras) != lastReportedCount) {
+        qInfo() << "Spinnaker cameras reported:" << numCameras;
+        lastReportedCount = static_cast<int>(numCameras);
+    }
+
+    QSet<QString> seenDeviceKeys;
+    QStringList detectedDevices;
     CameraPtr camera = nullptr;
     for(unsigned int i=0;i<numCameras;i++){
-        SpinCamera* fly = new SpinCamera(sm->getCamList().GetByIndex(i));
-        newCameras.push_back(fly);
+        try {
+            CameraPtr camPtr = camList.GetByIndex(i);
+            if (!camPtr) {
+                continue;
+            }
+            SpinCamera* fly = new SpinCamera(camPtr);
+            const QString deviceId = QString::fromStdString(fly->getString());
+            const QString serial = fly->getSerial();
+            const QString model = fly->getModel();
+            const QString deviceKey = deviceId + "|" + serial + "|" + model;
+            if (seenDeviceKeys.contains(deviceKey)) {
+                delete fly;
+                continue;
+            }
+            seenDeviceKeys.insert(deviceKey);
+            detectedDevices.push_back(deviceKey);
+            newCameras.push_back(fly);
+        } catch (const Spinnaker::Exception& e) {
+            std::cout << "[detect] Spinnaker exception at index " << i << ": " << e.what() << std::endl;
+        }
+    }
+    if (detectedDevices != lastReportedDevices) {
+        for (const QString& deviceKey : detectedDevices) {
+            const QStringList parts = deviceKey.split('|');
+            if (parts.size() == 3) {
+                qInfo() << "[detect] detected camera:" << parts.at(0).trimmed()
+                        << "|" << parts.at(1).trimmed()
+                        << "|" << parts.at(2).trimmed();
+            } else {
+                qInfo() << "[detect] detected camera:" << deviceKey;
+            }
+        }
+        lastReportedDevices = detectedDevices;
     }
     camera = nullptr;
+    camList.Clear();
 
     //removing disconnected cameras
    for (unsigned int i = 0; i < oldCameras.size(); i++) {
@@ -471,7 +545,7 @@ QModelIndex AbstractCameraManager::detectNewCamerasAndExpand(SystemManager *sm) 
         AbstractCamera* cam = newCameras.at(i);
         //QStandardItem* item = new QStandardItem(cam->getString().c_str());
         QList<QStandardItem*> items;
-        QStandardItem* item = new QStandardItem();
+        QStandardItem* item = new QStandardItem(QString::fromStdString(cam->getString()));
         item->setData(QVariant::fromValue(reinterpret_cast<quintptr>(cam)), CameraRole);
         item->setCheckable(true);
         item->setCheckState(Qt::Unchecked);
@@ -699,7 +773,7 @@ QStandardItem* AbstractCameraManager::cameraTree_recursiveFirstCamera(QStandardI
 void AbstractCameraManager::cameraTree_recursiveSetProperty(QStandardItem* parent, CameraManager::CameraProperty* prop){
     QVariant data = parent->data(CameraRole);
     if (data.isValid()) {
-        //reinterpret_cast<AbstractCamera *>(data.value<quintptr>())->setProperty(prop);
+        reinterpret_cast<AbstractCamera *>(data.value<quintptr>())->setProperty(prop);
         return;
     }
     for (int i = 0; i < parent->rowCount(); ++i) {
@@ -712,7 +786,7 @@ void AbstractCameraManager::cameraTree_recursiveSetProperty(QStandardItem* paren
 void AbstractCameraManager::cameraTree_recursiveSetSpinProperty(QStandardItem *parent, CameraManagerSpin::SpinCameraProperty *prop) {
     QVariant data = parent->data(CameraRole);
     if (data.isValid()) {
-        //reinterpret_cast<AbstractCamera *>(data.value<quintptr>())->setProperty(prop);
+        reinterpret_cast<AbstractCamera *>(data.value<quintptr>())->setSpinProperty(prop);
         return;
     }
     for (int i = 0; i < parent->rowCount(); ++i) {
@@ -745,21 +819,27 @@ void AbstractCameraManager::setSpinProperties(std::vector<CameraManagerSpin::Spi
     for(unsigned int i = 0; i < spinCameraProperties.size(); i++){
         SpinCameraProperty &property = spinCameraProperties.at(i);
 
-        //if (property.getType() == CameraManagerSpin::AUTOTRIGGER) continue;
-
         QTreeWidgetItem* it = new QTreeWidgetItem();
         it->setText(Ui::PropertyName, property.getName());
+        it->setData(Ui::PropertyName, Qt::UserRole, QVariant::fromValue(reinterpret_cast<quintptr>(&property)));
         propertiesList.addTopLevelItem(it);
 
-        //checkbox
-        QCheckBox* box = new QCheckBox();
-        box->setProperty("CameraProperty", QVariant::fromValue(reinterpret_cast<quintptr>(&property)));
-        box->setChecked(property.getAuto());
-        if (!property.getCanAuto()) box->setEnabled(false);
-        propertiesList.setItemWidget(it, Ui::PropertyAuto, box);
-        connect(box, SIGNAL(checkStateChanged(Qt::CheckState)), this, SLOT(on_propertyCheckbox_changed(Qt::CheckState)));
+        const bool isTriggerToggle =
+            property.getType() == CameraManagerSpin::AUTOTRIGGER ||
+            property.getType() == CameraManagerSpin::TRIGGER;
+        const bool showCheckBox = property.getCanAuto() || isTriggerToggle;
 
-        if (property.getType() == CameraManagerSpin::AUTOTRIGGER || property.getType() == CameraManagerSpin::TRIGGER) continue;
+        QCheckBox* box = nullptr;
+        if (showCheckBox) {
+            box = new QCheckBox();
+            box->setProperty("CameraProperty", QVariant::fromValue(reinterpret_cast<quintptr>(&property)));
+            box->setChecked(property.getAuto());
+            box->setEnabled(isTriggerToggle || property.getCanAuto());
+            propertiesList.setItemWidget(it, Ui::PropertyAuto, box);
+            connect(box, SIGNAL(checkStateChanged(Qt::CheckState)), this, SLOT(on_propertyCheckbox_changed(Qt::CheckState)));
+        }
+
+        if (isTriggerToggle) continue;
 
         QSlider* slider = new QSlider(Qt::Horizontal);
         QLineEdit* writeValueBox = new QLineEdit(property.formatValue());
@@ -791,7 +871,9 @@ void AbstractCameraManager::setSpinProperties(std::vector<CameraManagerSpin::Spi
         slider->setRange(property.getMinToSlider(), property.getMaxToSLider());
         propertiesList.setItemWidget(it, Ui::PropertySlider, slider);
 
-        box->setProperty("TreeWidgetSlider", QVariant::fromValue(reinterpret_cast<quintptr>(slider)));
+        if (box != nullptr) {
+            box->setProperty("TreeWidgetSlider", QVariant::fromValue(reinterpret_cast<quintptr>(slider)));
+        }
         connect(slider, SIGNAL(valueChanged(int)), this, SLOT(on_propertySlider_changed(int)));
     }
     propertiesList.resizeColumnToContents(0);
@@ -813,6 +895,7 @@ void AbstractCameraManager::updateSpinProperties(std::vector<CameraManagerSpin::
            // activeCameras.at(j).camera->setProperty(&property);
         }
         QCheckBox* box = (QCheckBox*) propertiesList.itemWidget(it, Ui::PropertyAuto);
+        QSignalBlocker checkBoxBlocker(box);
         box->setChecked(property.getAuto());
         if (!property.getCanAuto()) box->setEnabled(false);
         if (property.getType() == CameraManagerSpin::AUTOTRIGGER || property.getType() == CameraManagerSpin::TRIGGER) continue;
@@ -827,6 +910,7 @@ void AbstractCameraManager::updateSpinProperties(std::vector<CameraManagerSpin::
         //readValueBox->setText(readProp.formatValue());
 
         QSlider* slider = (QSlider*) propertiesList.itemWidget(it, Ui::PropertySlider);
+        QSignalBlocker sliderBlocker(slider);
         slider->setValue(property.getValueToSlider());
         slider->setRange(property.getMinToSlider(), property.getMaxToSLider());
     }

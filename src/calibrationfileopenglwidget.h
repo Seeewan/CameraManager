@@ -5,8 +5,8 @@
 #ifndef CALIBRATIONFILE_OPENGL_WIDGET_H
 #define CALIBRATIONFILE_OPENGL_WIDGET_H
 
-#include <QtOpenGLWidgets/qopenglwidget.h>
-#include <qpainter.h>
+#include <QOpenGLWidget>
+#include <QPainter>
 #include <vector>
 #include "calibrationfile.h"
 

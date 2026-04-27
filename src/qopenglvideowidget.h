@@ -1,12 +1,11 @@
 
-// Written by: Lars Aksel Tveråmo
+// Written by: Lars Aksel Tvermo
 
 #ifndef QOPENGLVIDEOWIDGET_H
 #define QOPENGLVIDEOWIDGET_H
 
 #include <QtWidgets/qwidget.h>
-#include <QtOpenGL>
-#include <QtOpenGLWidgets/QtOpenGLWidgets>
+#include <QOpenGLWidget>
 #include <QtCore/qmath.h>
 #include <QThread>
 #include <QMutex>

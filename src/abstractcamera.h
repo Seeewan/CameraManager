@@ -13,8 +13,7 @@
 #include "cameraproperty.h"
 #include "videoopenglwidget.h"
 //RAJOUT HUGO
-#include "include/Spinnaker/Spinnaker.h"
-#include "include/Spinnaker/SpinGenApi/SpinnakerGenApi.h"
+#include "spinnaker_compat.h"
 #include"spincameraproperty.h"
 using namespace Spinnaker;
 using namespace Spinnaker::GenApi;
@@ -40,6 +39,7 @@ public:
         * @param p property to set
         */
     virtual void setSpinProperty(CameraManagerSpin::SpinCameraProperty* p) = 0;
+    virtual bool refreshSpinPropertyMetadata(CameraManagerSpin::SpinCameraProperty* p) { Q_UNUSED(p); return false; }
 
 
     /**
@@ -100,6 +100,8 @@ public:
 
 protected:
     AbstractCamera();
+    inline void setSerialValue(const QString& value) { serial = value; }
+    inline void setModelValue(const QString& value) { model = value; }
 
     /**
         * @brief sendFrame send a new QImage for the view

@@ -12,7 +12,7 @@
 #include <qtreeview.h>
 #include <qtableview.h>
 #include <qlayout.h>
-#include <QtOpenGLWidgets/QOpenGLWidget>
+#include <QOpenGLWidget>
 #include <qtreewidget.h>
 #include <qstandarditemmodel.h>
 #include <qplaintextedit.h>

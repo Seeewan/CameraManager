@@ -9,7 +9,6 @@
 #include <QString>
 #include <QtWidgets/QLineEdit>
 #include <QFont>
-#include <QtOpenGL/QtOpenGL>
 #include <QtNetwork/qtcpsocket.h>
 #include <QtNetwork/qabstractsocket.h>
 #include <QtNetwork/qhostinfo.h>

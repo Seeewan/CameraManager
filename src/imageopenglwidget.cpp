@@ -695,7 +695,7 @@ void ImageOpenGLWidget::mousePressEvent(QMouseEvent* event) {
     if (event->button() == Qt::MouseButton::LeftButton) {
         leftMouseButtonDown = true;
         showZoomArea = true;
-        mouseDragStart = event->localPos() - scaledImageArea.topLeft();
+        mouseDragStart = event->position() - scaledImageArea.topLeft();
         mouseDragStart.setX(mouseDragStart.x() * ((double) imageWidth / scaledImageArea.width()));
         mouseDragStart.setY(mouseDragStart.y() * ((double) imageHeight / scaledImageArea.height()));
         update();
@@ -766,9 +766,10 @@ void ImageOpenGLWidget::mouseReleaseEvent(QMouseEvent* event) {
 }
 
 void ImageOpenGLWidget::mouseMoveEvent(QMouseEvent * event) {
-    int dx = event->x() - actualMousePos.x();
-    int dy = event->y() - actualMousePos.y();
-    actualMousePos = event->pos();
+    const QPointF eventPos = event->position();
+    int dx = eventPos.x() - actualMousePos.x();
+    int dy = eventPos.y() - actualMousePos.y();
+    actualMousePos = eventPos;
     if (showZoomArea) {
         double sensitivity = zoomFactor * 2;
         mousePos.setX(mousePos.x() + ((double) dx) / sensitivity);
@@ -938,4 +939,3 @@ QString ImageOpenGLWidget::createPointLabelDialog() {
     lastPointString = res;
     return res;
 }
-

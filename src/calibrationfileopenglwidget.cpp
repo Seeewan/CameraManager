@@ -313,7 +313,7 @@ void CalibrationFileOpenGLWidget::leaveEvent(QEvent* event) {
 }
 
 void CalibrationFileOpenGLWidget::mouseMoveEvent(QMouseEvent* event) {
-    mousePos = event->localPos();
+    mousePos = event->position();
     mouseOpenGLPos.setX(mousePos.x() * (screenArea.width() / width()) + screenArea.left());
     mouseOpenGLPos.setY(mousePos.y() * (screenArea.height() / height()) + screenArea.top());
     update();

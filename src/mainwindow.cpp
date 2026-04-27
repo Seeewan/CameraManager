@@ -10,6 +10,7 @@
 #include <QIcon>
 #include <QDebug>
 #include <QDir>
+#include <QApplication>
 #include <QtWidgets/QFileDialog>
 #include <QFileInfo>
 #include <QProcess>
@@ -44,12 +45,6 @@ bool Ui::crosshair = false, Ui::crosshairReal = false, Ui::forceHighQuality = fa
 
 /* Constructor of MainWindow*/
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWindow), selectedCameraManager(-1), detectCameras(true) , tdc(this),tup(this) {
-
-    // Armand & Nathan on 16/05/2024
-    QDir defaultDir = QDir::current();
-    defaultDir.cd("../../..");
-    QDir::setCurrent(defaultDir.absolutePath());
-
     // qInfo() << QApplication::primaryScreen()->size();
 
     // Armand & Nathan on 21/06/2024
@@ -88,6 +83,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         AbstractCameraManager* manager = cameraManagers.at(i);
         manager->setMainWindow(this);
         ui->selectCameraManager->addItem(manager->getName().c_str());
+    }
+
+    if (ui->selectCameraManager->count() > 0) {
+        ui->selectCameraManager->setCurrentIndex(0);
+        on_SelectCameras_currentIndexChanged(0);
     }
 
     /* Disable left menu header */
@@ -139,11 +139,31 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     // tdc.start();
 
     connect(timer, &QTimer::timeout, this, [this](){
+        if (selectedCameraManager < 0 || selectedCameraManager >= cameraManagers.size()) {
+            return;
+        }
         SystemManager *sm = new SystemManager;
         ui->cameraTree->setExpanded(cameraManagers.at(selectedCameraManager)->detectNewCamerasAndExpand(sm), true);
+        delete sm;
     });
 
-    timer->start(200);
+    timer->start(1000);
+
+    connect(propertiesTimer, &QTimer::timeout, this, [this]() {
+        if (selectedCameraManager < 0 || selectedCameraManager >= cameraManagers.size()) {
+            return;
+        }
+        if (!bar->getRunLiveView()->isChecked()) {
+            return;
+        }
+        QWidget* focusedWidget = QApplication::focusWidget();
+        QTreeWidget* propertiesWidget = cameraManagers.at(selectedCameraManager)->getPropertiesWidget();
+        if (focusedWidget != nullptr && (focusedWidget == propertiesWidget || propertiesWidget->isAncestorOf(focusedWidget))) {
+            return;
+        }
+        cameraManagers.at(selectedCameraManager)->updateSpinProperties();
+    });
+    propertiesTimer->start(1000);
 
 
     setFocusPolicy(Qt::TabFocus);
@@ -164,6 +184,7 @@ MainWindow::~MainWindow() {
     // deux lignes a remettr en commentaire si bug
     //tdc.wait();
     timer->stop();
+    propertiesTimer->stop();
     tup.wait();
     // deux lignes a remettre en commentaire si bug
     for (int i = 0; i < cameraManagers.size(); i++) {
@@ -214,8 +235,6 @@ void MainWindow::on_actionLiveView_toggled(bool arg1) {
     ui->actionTakePicture->setEnabled(arg1);
     cameraManagers.at(selectedCameraManager)->activateLiveView(arg1);
     cameraManagers.at(selectedCameraManager)->setTrackPointProperty(&trackPointProperty);
-    if (arg1) tup.start();
-    //else
 }
 
 /* Click on UpdateImage button */
@@ -393,9 +412,6 @@ void MainWindow::menuBarClicked(QAction* action) {
         ui->actionLiveView->setChecked(b);
         bar->getUpdateImage()->setDisabled(b);
         bar->getTakePicture()->setEnabled(b);
-        if (!tup.isRunning())
-           tup.start();
-
     } else if (action->text() == "Update Image") {
         on_actionUpdateImages_triggered();
     } else if (action->text() == "Take Picture") {
@@ -404,7 +420,7 @@ void MainWindow::menuBarClicked(QAction* action) {
         detectCameras = bar->getCameraAutoDetection()->isChecked();
         if (detectCameras) {
             //tdc.start();
-            timer->start(200);
+            timer->start(1000);
         }else{
             //tdc.wait()
             timer->stop();
@@ -473,7 +489,7 @@ void MainWindow::startCameraDetection(SystemManager *sm) {
     while (detectCameras){
         ui->cameraTree->setExpanded(cameraManagers.at(selectedCameraManager)->detectNewCamerasAndExpand(sm), true);
         //emit resizeColumnsCameraTree();
-        QThread::msleep(200);
+        QThread::msleep(1000);
     }
 }
 

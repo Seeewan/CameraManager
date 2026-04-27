@@ -20,7 +20,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#include <QtOpenGL/QtOpenGL>
 #include <QPlainTextEdit>
 #include <qmdiarea.h>
 #include <src/3DProject/programwindow.h>

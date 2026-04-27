@@ -6,14 +6,7 @@
 #include <sstream>
 #include "spincameraproperty.h"
 
-#if defined(WIN64) || defined(WIN32)
-#include <include/Spinnaker/Spinnaker.h>
-#include <include/Spinnaker/SpinGenApi/SpinnakerGenApi.h>
-#endif
-#if defined(__unix__) || defined(__linux__)
-#include <include/Spinnaker/Spinnaker.h>
-#include <include/Spinnaker/SpinGenApi/SpinnakerGenApi.h>
-#endif
+#include "spinnaker_compat.h"
 
 using namespace Spinnaker;
 using namespace Spinnaker::GenApi;
@@ -35,15 +28,8 @@ public:
     inline Spinnaker::CameraPtr getCamera() {
         return cam;
     }
-    inline QString getSerial() {
-        Spinnaker::GenApi::CStringPtr ptrStringSerial = getCamera()->GetTLDeviceNodeMap().GetNode("DeviceSerialNumber");
-        return QString(ptrStringSerial->GetValue());
-    }
-    inline QString getModel() {
-        Spinnaker::GenApi::CStringPtr ptrStringModel = getCamera()->GetTLDeviceNodeMap().GetNode("DeviceModelName");
-        return QString(ptrStringModel->GetValue());
-    }
     void setSpinProperty(CameraManagerSpin::SpinCameraProperty* p);
+    bool refreshSpinPropertyMetadata(CameraManagerSpin::SpinCameraProperty* p) override;
     void setProperty(CameraManager::CameraProperty* p);
     void startAutoCapture();
     void stopAutoCapture();
@@ -56,6 +42,7 @@ public:
 
 private:
     Spinnaker::CameraPtr cam;
+    std::string deviceId = "unknown-device";
     std::vector<Spinnaker::ImagePtr> captureImage();
 
 };

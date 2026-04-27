@@ -1,7 +1,7 @@
 
 #include "videoopenglwidget.h"
 
-VideoOpenGLWidget::VideoOpenGLWidget(bool colored, TrackPointProperty* trackPointProps, QWidget* parent) : ImageOpenGLWidget(colored, trackPointProperty, parent) {
+VideoOpenGLWidget::VideoOpenGLWidget(bool colored, TrackPointProperty* trackPointProps, QWidget* parent) : ImageOpenGLWidget(colored, trackPointProps, parent) {
     connect(this, SIGNAL(forceUpdate()), this, SLOT(receiveUpdate()));
     enableSubImages = false;
     showMouseOverCoordinateLabel = true;

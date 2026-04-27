@@ -85,7 +85,7 @@ void WidgetGL::initializingCameras() {
     for (int i = 0; i < calibFile->getNumCameras(); i++) {
         found = false;
         for (int j = 0; j < calibFile->getCameraCombinations().size(); j++) {
-            if (!calibFile->getCameraCombinations()[j]->status == TrackPoint::CalibrationStatus::OK) continue;
+            if (calibFile->getCameraCombinations()[j]->status != TrackPoint::CalibrationStatus::OK) continue;
             for (int k = 0; k < 3; k++) {
                 if (calibFile->getCameraCombinations()[j]->cameras[k]->camNo == i) {
                     TrackPoint::Camera* cam = calibFile->getCameraCombinations()[j]->cameras[k];

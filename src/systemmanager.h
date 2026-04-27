@@ -2,8 +2,7 @@
 #define SYSTEMMANAGER_H
 
 #include <QObject>
-#include <include/Spinnaker/Spinnaker.h>
-#include <include/Spinnaker/SpinGenApi/SpinnakerGenApi.h>
+#include "spinnaker_compat.h"
 
 using namespace Spinnaker;
 using namespace Spinnaker::GenApi;
@@ -16,11 +15,12 @@ public:
     ~SystemManager();
 
     SystemPtr getSystem(){return system;}
-    CameraList getCamList(){return system->GetCameras();}
+    CameraList getCamList();
+    bool isValid() const { return valid; }
 
 private:
     SystemPtr system;
-    CameraList list;
+    bool valid = false;
 };
 
 #endif // SYSTEMMANAGER_H

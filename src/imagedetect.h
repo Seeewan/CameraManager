@@ -9,10 +9,15 @@
 #include <iostream>
 #include <qthread.h>
 #include <algorithm>
-#include <emmintrin.h>
 #include <math.h>
 #include "constants.h"
 
+#if defined(SIMD_TESTING_128_BIT) && (defined(__x86_64__) || defined(_M_X64) || defined(__i386) || defined(_M_IX86))
+#include <emmintrin.h>
+#define CAMERA_MANAGER_X86_SIMD 1
+#endif
+
+#if defined(CAMERA_MANAGER_X86_SIMD)
 // Unsigned greater-than comparison 8-bit
 static inline __m128i _mm_cmpgt_epu8(__m128i x, __m128i y) {
   // Returns 0xFF where x > y:
@@ -24,6 +29,7 @@ static inline __m128i _mm_cmplt_epu8(__m128i x, __m128i y) {
   // Returns 0xFF where x < y:
   return _mm_cmpgt_epu8(y, x);
 }
+#endif
 
 struct ImPoint {
     ImPoint() : x(0.0), y(0.0), weight(0.0) {}

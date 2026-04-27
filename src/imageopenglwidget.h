@@ -5,12 +5,13 @@
 #ifndef IMAGE_OPENGL_WIDGET_H
 #define IMAGE_OPENGL_WIDGET_H
 
-#include <QtOpenGL>
+#include <QOpenGLFunctions>
+#include <QOpenGLWidget>
+#include <QInputDialog>
+#include <QMouseEvent>
+#include <QPainter>
+#include <QPen>
 #include <QtWidgets/qwidget.h>
-#include <QtOpenGL>
-#include <QtOpenGL/QtOpenGL>
-#include <QtOpenGLWidgets/QtOpenGLWidgets>
-#include <qopengl.h>
 
 #include "imagedetect.h"
 #include "trackpointproperty.h"
