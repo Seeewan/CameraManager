@@ -1,5 +1,6 @@
 
 #include "imageopenglwidget.h"
+#include <algorithm>
 #include <chrono>
 
 namespace {
@@ -40,6 +41,15 @@ ImageOpenGLWidget::ImageOpenGLWidget(bool colored, TrackPointProperty* trackPoin
     numImageGroupsX = 3;
     numImageGroupsY = 3;
     setMouseTracking(true);
+    rotateButton = new QPushButton("R", this);
+    rotateButton->setFixedSize(24, 24);
+    rotateButton->setFocusPolicy(Qt::NoFocus);
+    rotateButton->setToolTip("Rotate 90 degrees");
+    rotateButton->setStyleSheet("QPushButton { background: rgba(255, 255, 255, 210); border: 1px solid #666; border-radius: 3px; font-weight: bold; } QPushButton:hover { background: white; }");
+    connect(rotateButton, &QPushButton::clicked, this, [this]() {
+        rotateClockwise();
+    });
+    rotateButton->raise();
 
     // Test-code for boxes and circles, used for drawing masking-areas etc.
     // Maybe about 70-80 % finished bounding-area management code.
@@ -101,19 +111,24 @@ void ImageOpenGLWidget::updateView() {
     glLoadIdentity();
     int width = this->width();
     int height = this->height();
+    QSizeF imageSize = rotatedImageSize();
+    if (imageSize.width() <= 0 || imageSize.height() <= 0 || width <= 0 || height <= 0) {
+        scaledImageArea = QRect(0, 0, width, height);
+        return;
+    }
     //QSize s = size();
     glOrtho(0, this->width(), this->height(), 0, 1, -1);
     glMatrixMode(GL_MODELVIEW);
 
-    if (((float) width / height) > ((float) imageWidth / imageHeight)) {
+    if (((float) width / height) > ((float) imageSize.width() / imageSize.height())) {
         scaledImageArea.setHeight(height);
-        scaledImageArea.setWidth(((float) imageWidth / imageHeight) * height);
+        scaledImageArea.setWidth(((float) imageSize.width() / imageSize.height()) * height);
         scaledImageArea.setTop(0);
-        scaledImageArea.setLeft((width - (((float) imageWidth / imageHeight) * height)) / 2);
+        scaledImageArea.setLeft((width - (((float) imageSize.width() / imageSize.height()) * height)) / 2);
     } else {
-        scaledImageArea.setHeight(((float) imageHeight / imageWidth) * width);
+        scaledImageArea.setHeight(((float) imageSize.height() / imageSize.width()) * width);
         scaledImageArea.setWidth(width);
-        scaledImageArea.setTop((height - (((float) imageHeight / imageWidth) * width)) / 2);
+        scaledImageArea.setTop((height - (((float) imageSize.height() / imageSize.width()) * width)) / 2);
         scaledImageArea.setLeft(0);
     }
 
@@ -128,15 +143,100 @@ void ImageOpenGLWidget::updateView() {
 
 }
 
+void ImageOpenGLWidget::resizeEvent(QResizeEvent* event) {
+    QOpenGLWidget::resizeEvent(event);
+    if (rotateButton != nullptr) {
+        rotateButton->move(width() - rotateButton->width() - 8, 8);
+        rotateButton->raise();
+    }
+}
+
+void ImageOpenGLWidget::rotateClockwise() {
+    rotationQuarterTurns = (rotationQuarterTurns + 1) % 4;
+    updateView();
+    update();
+}
+
+QSizeF ImageOpenGLWidget::rotatedImageSize() const {
+    if (rotationQuarterTurns % 2 == 0) {
+        return QSizeF(imageWidth, imageHeight);
+    }
+    return QSizeF(imageHeight, imageWidth);
+}
+
+QPointF ImageOpenGLWidget::imagePointToDisplayPoint(double x, double y) const {
+    const double safeImageWidth = std::max(1u, imageWidth);
+    const double safeImageHeight = std::max(1u, imageHeight);
+    double rotatedX = x;
+    double rotatedY = y;
+
+    switch (rotationQuarterTurns % 4) {
+    case 1:
+        rotatedX = safeImageHeight - y;
+        rotatedY = x;
+        break;
+    case 2:
+        rotatedX = safeImageWidth - x;
+        rotatedY = safeImageHeight - y;
+        break;
+    case 3:
+        rotatedX = y;
+        rotatedY = safeImageWidth - x;
+        break;
+    default:
+        break;
+    }
+
+    QSizeF imageSize = rotatedImageSize();
+    return QPointF(rotatedX * ((double) scaledImageArea.width() / imageSize.width()),
+                   rotatedY * ((double) scaledImageArea.height() / imageSize.height()));
+}
+
+QPointF ImageOpenGLWidget::displayPointToImagePoint(const QPointF& displayPoint) const {
+    QSizeF imageSize = rotatedImageSize();
+    if (imageSize.width() <= 0 || imageSize.height() <= 0 || scaledImageArea.width() <= 0 || scaledImageArea.height() <= 0) {
+        return QPointF();
+    }
+
+    const double rotatedX = displayPoint.x() * ((double) imageSize.width() / scaledImageArea.width());
+    const double rotatedY = displayPoint.y() * ((double) imageSize.height() / scaledImageArea.height());
+    const double safeImageWidth = std::max(1u, imageWidth);
+    const double safeImageHeight = std::max(1u, imageHeight);
+    double sourceX = rotatedX;
+    double sourceY = rotatedY;
+
+    switch (rotationQuarterTurns % 4) {
+    case 1:
+        sourceX = rotatedY;
+        sourceY = safeImageHeight - rotatedX;
+        break;
+    case 2:
+        sourceX = safeImageWidth - rotatedX;
+        sourceY = safeImageHeight - rotatedY;
+        break;
+    case 3:
+        sourceX = safeImageWidth - rotatedY;
+        sourceY = rotatedX;
+        break;
+    default:
+        break;
+    }
+
+    sourceX = std::clamp(sourceX, 0.0, safeImageWidth);
+    sourceY = std::clamp(sourceY, 0.0, safeImageHeight);
+    return QPointF(sourceX, sourceY);
+}
+
 void ImageOpenGLWidget::paintGL() {
     updateView();
     int subImageWidth = imageWidth / numImageGroupsX;
     int subImageHeight = imageHeight / numImageGroupsY;
 
-    imageToScreenCoordX = ((double) scaledImageArea.width() / imageWidth);
-    imageToScreenCoordY = ((double) scaledImageArea.height() / imageHeight);
-    screenToImageCoordX = ((double) imageWidth / scaledImageArea.width());
-    screenToImageCoordY = ((double) imageHeight / scaledImageArea.height());
+    QSizeF imageSize = rotatedImageSize();
+    imageToScreenCoordX = ((double) scaledImageArea.width() / imageSize.width());
+    imageToScreenCoordY = ((double) scaledImageArea.height() / imageSize.height());
+    screenToImageCoordX = ((double) imageSize.width() / scaledImageArea.width());
+    screenToImageCoordY = ((double) imageSize.height() / scaledImageArea.height());
 
     if (texture.getTextureWidth() != imageWidth || texture.getTextureHeight() != imageHeight) {
         if(colored){
@@ -256,15 +356,23 @@ void ImageOpenGLWidget::paintGL() {
     glEnable(GL_TEXTURE_2D);
     texture.bind();
 
+    const GLfloat texCoords[4][4][2] = {
+        {{0.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 1.0f}, {0.0f, 1.0f}},
+        {{0.0f, 1.0f}, {0.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 1.0f}},
+        {{1.0f, 1.0f}, {0.0f, 1.0f}, {0.0f, 0.0f}, {1.0f, 0.0f}},
+        {{1.0f, 0.0f}, {1.0f, 1.0f}, {0.0f, 1.0f}, {0.0f, 0.0f}}
+    };
+    const int rotationIndex = rotationQuarterTurns % 4;
+
     glTranslated(scaledImageArea.left(), scaledImageArea.top(), 0);
     glBegin(GL_QUADS);
-    glTexCoord2f(0.0f, 0.0f);
+    glTexCoord2f(texCoords[rotationIndex][0][0], texCoords[rotationIndex][0][1]);
     glVertex2d(0, 0);
-    glTexCoord2f(1.0f, 0.0f);
+    glTexCoord2f(texCoords[rotationIndex][1][0], texCoords[rotationIndex][1][1]);
     glVertex2d(scaledImageArea.width(), 0);
-    glTexCoord2f(1.0f, 1.0f);
+    glTexCoord2f(texCoords[rotationIndex][2][0], texCoords[rotationIndex][2][1]);
     glVertex2d(scaledImageArea.width(), scaledImageArea.height());
-    glTexCoord2f(0.0f, 1.0f);
+    glTexCoord2f(texCoords[rotationIndex][3][0], texCoords[rotationIndex][3][1]);
     glVertex2d(0, scaledImageArea.height());
     glEnd();
     texture.unbind();
@@ -485,8 +593,9 @@ void ImageOpenGLWidget::paintGL() {
             if (trackPointProperty->showMinSepCircle) crossWingSize = imageToScreenCoordX * trackPointProperty->minSepValue;
             glLineWidth(1);
             for (int i = 0; i < points.size(); i++) {
-                double xPos = ((double) points[i].x * imageToScreenCoordX);
-                double yPos = ((double) points[i].y * imageToScreenCoordY);
+                QPointF pointPos = imagePointToDisplayPoint(points[i].x, points[i].y);
+                double xPos = pointPos.x();
+                double yPos = pointPos.y();
 
                 glColor3f(1, 0, 0);
                 glBegin(GL_LINES);
@@ -538,8 +647,9 @@ void ImageOpenGLWidget::paintGL() {
         pointCrossWingSize = crossWingSize;
         glColor3f(0, 1, 0);
         if (selectedPoint >= 0) {
-            double xPos = pointSeries[selectedPoint]->pointX * imageToScreenCoordY; // Screen-coordinates
-            double yPos = pointSeries[selectedPoint]->pointY * imageToScreenCoordY; // Screen-coordinates
+            QPointF pointPos = imagePointToDisplayPoint(pointSeries[selectedPoint]->pointX, pointSeries[selectedPoint]->pointY);
+            double xPos = pointPos.x(); // Screen-coordinates
+            double yPos = pointPos.y(); // Screen-coordinates
 
             glBegin(GL_LINE_LOOP);
             glVertex2d(xPos - crossWingSize - diffFromCross, yPos - diffFromCross);
@@ -559,8 +669,9 @@ void ImageOpenGLWidget::paintGL() {
         //glLineWidth(2);
         for (int i = 0; i < pointSeries.size(); i++) {
             glColor3f(0, 1, 0);
-            double xPos = pointSeries[i]->pointX * imageToScreenCoordY; // Screen-coordinates
-            double yPos = pointSeries[i]->pointY * imageToScreenCoordY; // Screen-coordinates
+            QPointF pointPos = imagePointToDisplayPoint(pointSeries[i]->pointX, pointSeries[i]->pointY);
+            double xPos = pointPos.x(); // Screen-coordinates
+            double yPos = pointPos.y(); // Screen-coordinates
 
             glBegin(GL_LINES);
             glVertex2d(xPos - crossWingSize, yPos);
@@ -775,9 +886,7 @@ void ImageOpenGLWidget::mousePressEvent(QMouseEvent* event) {
         }
         leftMouseButtonDown = true;
         showZoomArea = true;
-        mouseDragStart = event->position() - scaledImageArea.topLeft();
-        mouseDragStart.setX(mouseDragStart.x() * ((double) imageWidth / scaledImageArea.width()));
-        mouseDragStart.setY(mouseDragStart.y() * ((double) imageHeight / scaledImageArea.height()));
+        mouseDragStart = displayPointToImagePoint(event->position() - scaledImageArea.topLeft());
         update();
     }
     if (event->button() == Qt::MouseButton::RightButton) {
@@ -857,9 +966,7 @@ void ImageOpenGLWidget::mouseMoveEvent(QMouseEvent * event) {
     } else {
         mousePos = actualMousePos;
     }
-    mousePosInImage = mousePos - scaledImageArea.topLeft();
-    mousePosInImage.setX(mousePosInImage.x() * ((double) imageWidth / scaledImageArea.width()));
-    mousePosInImage.setY(mousePosInImage.y() * ((double) imageHeight / scaledImageArea.height()));
+    mousePosInImage = displayPointToImagePoint(mousePos - scaledImageArea.topLeft());
 
     if (leftMouseButtonDown) {
         dragBoundingArea();

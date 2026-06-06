@@ -12,6 +12,7 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPen>
+#include <QPushButton>
 #include <QtWidgets/qwidget.h>
 #include <functional>
 #include <future>
@@ -84,12 +85,14 @@ protected:
     void mousePressEvent(QMouseEvent* event);
     void mouseReleaseEvent(QMouseEvent* event);
     void mouseMoveEvent(QMouseEvent* event);
+    void resizeEvent(QResizeEvent* event);
     void enterEvent(QEvent*);
     void leaveEvent(QEvent*);
 
 private:
     std::vector<CircleF*> boundingCircles;
     std::vector<QRectF*> boundingBoxes;
+    QPushButton* rotateButton = nullptr;
     bool newImageReady;
 
     double imageToScreenCoordX;
@@ -119,6 +122,7 @@ private:
     bool showPointSeriesString = false;
     bool singlePointsOnly = false; // how many points per sub-region of image
     std::function<void()> clickHandler;
+    int rotationQuarterTurns = 0;
     QElapsedTimer trackPointProcessingTimer;
     struct TrackPointProcessingResult {
         bool hasFilteredImage = false;
@@ -149,6 +153,10 @@ private:
     void updateView();
     QString createPointLabelDialog();
     bool trackPointSettingsChanged() const;
+    void rotateClockwise();
+    QSizeF rotatedImageSize() const;
+    QPointF imagePointToDisplayPoint(double x, double y) const;
+    QPointF displayPointToImagePoint(const QPointF& displayPoint) const;
 };
 
 #endif
