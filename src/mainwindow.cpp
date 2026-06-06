@@ -383,6 +383,19 @@ void MainWindow::cameraTree_itemDoubleClicked(const QModelIndex index) {
     }
 }
 
+void MainWindow::selectCameraFromLiveView(const QModelIndex &index) {
+    if (!index.isValid()) {
+        return;
+    }
+
+    const QModelIndex firstColumnIndex = index.sibling(index.row(), 0);
+    ui->cameraTree->setCurrentIndex(firstColumnIndex);
+    if (ui->cameraTree->selectionModel() != nullptr) {
+        ui->cameraTree->selectionModel()->select(firstColumnIndex, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+    }
+    cameraTree_itemClicked(firstColumnIndex);
+}
+
 /* Right click in CameraTree */
 void MainWindow::on_CameraTree_customContextMenuRequested(const QPoint &pos) {
     /* Creating a menu with allowed actions */

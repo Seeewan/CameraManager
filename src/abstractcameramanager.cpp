@@ -132,7 +132,7 @@ QString AbstractCameraManager::buildCameraDeviceKey(AbstractCamera* camera) cons
 
 QString AbstractCameraManager::getDefaultCameraName(const QString& deviceKey) {
     if (!defaultCameraNamesByDeviceKey.contains(deviceKey)) {
-        defaultCameraNamesByDeviceKey.insert(deviceKey, QString("Camera%1").arg(nextCameraIndex++));
+        defaultCameraNamesByDeviceKey.insert(deviceKey, QString("Camera %1").arg(nextCameraIndex++));
     }
     return defaultCameraNamesByDeviceKey.value(deviceKey);
 }
@@ -158,12 +158,39 @@ void AbstractCameraManager::assignCameraName(AbstractCamera* camera, const QStri
 
 void AbstractCameraManager::refreshActiveCameraTitles(AbstractCamera* camera, QStandardItem* item) {
     if (camera == nullptr || item == nullptr) return;
-    const QString displayName = item->text();
+    const QString displayName = cameraDisplayTitle(item);
     for (int i = activeCameras.size() - 1; i >= 0; --i) {
         if (activeCameras.at(i).camera != camera) continue;
         activeCameras.at(i).window->setWindowTitle(displayName);
         activeCameras.at(i).coloredWindow->setWindowTitle(displayName + " (Color)");
     }
+}
+
+QString AbstractCameraManager::cameraDisplayTitle(QStandardItem* item) const {
+    if (item == nullptr) {
+        return QString();
+    }
+
+    QStandardItem* parent = item->parent();
+    QModelIndex parentIndex = (parent == nullptr) ? QModelIndex() : parent->index();
+    QString displayName = item->text();
+    QString serial;
+
+    if (item->column() != 0 && item->model() != nullptr) {
+        QStandardItem* firstColumnItem = item->model()->itemFromIndex(item->index().siblingAtColumn(0));
+        if (firstColumnItem != nullptr) {
+            displayName = firstColumnItem->text();
+        }
+    }
+
+    if (item->model() != nullptr) {
+        QStandardItem* serialItem = item->model()->itemFromIndex(item->model()->index(item->row(), 1, parentIndex));
+        if (serialItem != nullptr) {
+            serial = serialItem->text();
+        }
+    }
+
+    return serial.isEmpty() ? displayName : QString("%1 - %2").arg(displayName, serial);
 }
 
 void AbstractCameraManager::updateProperties() {
@@ -652,8 +679,9 @@ void AbstractCameraManager::activateCamera(AbstractCamera* camera, QStandardItem
             mainWindow->modifySubWindow(entry->coloredWindow, false);
             activeCameras.erase(activeCameras.begin()+i);
         } else {
-            activeCameras.at(i).window->setWindowTitle(item->text());
-            activeCameras.at(i).coloredWindow->setWindowTitle(item->text() + " (Color)");
+            const QString displayTitle = cameraDisplayTitle(item);
+            activeCameras.at(i).window->setWindowTitle(displayTitle);
+            activeCameras.at(i).coloredWindow->setWindowTitle(displayTitle + " (Color)");
         }
     } else {
         if (active) {
@@ -661,13 +689,14 @@ void AbstractCameraManager::activateCamera(AbstractCamera* camera, QStandardItem
 
 
             connect(entry.window, SIGNAL(destroyed(QObject*)), this, SLOT(on_subwindow_closing(QObject*)));
-            entry.window->setWindowTitle(item->text());
+            const QString displayTitle = cameraDisplayTitle(item);
+            entry.window->setWindowTitle(displayTitle);
             if(!mainWindow->isColorModeActivate()) mainWindow->modifySubWindow(entry.window, true);
             VideoOpenGLWidget* videoWidget = qobject_cast<VideoOpenGLWidget*>(entry.window->widget());
             camera->setVideoContainer(videoWidget);
 
             connect(entry.coloredWindow, SIGNAL(destroyed(QObject*)), this, SLOT(on_subwindow_closing(QObject*)));
-            QString coloredName = item->text();
+            QString coloredName = displayTitle;
             coloredName.append(" (Color)");
             entry.coloredWindow->setWindowTitle(coloredName);
             if(mainWindow->isColorModeActivate()) mainWindow->modifySubWindow(entry.coloredWindow, true);
@@ -709,6 +738,20 @@ void AbstractCameraManager::activateCamera(AbstractCamera* camera, QStandardItem
             */
             videoWidget->setMouseTracking(mainWindow->isRealCoordinateActivate());
             coloredVideoWidget->setMouseTracking(mainWindow->isRealCoordinateActivate());
+
+            const QPersistentModelIndex persistentIndex(item->index());
+            videoWidget->setClickHandler([this, persistentIndex]() {
+                if (mainWindow == nullptr || !persistentIndex.isValid()) {
+                    return;
+                }
+                mainWindow->selectCameraFromLiveView(persistentIndex);
+            });
+            coloredVideoWidget->setClickHandler([this, persistentIndex]() {
+                if (mainWindow == nullptr || !persistentIndex.isValid()) {
+                    return;
+                }
+                mainWindow->selectCameraFromLiveView(persistentIndex);
+            });
 
             if(liveView) entry.camera->startCapture(qobject_cast<VideoOpenGLWidget *>(entry.window->widget()), qobject_cast<VideoOpenGLWidget *>(entry.coloredWindow->widget()));
 

@@ -8,10 +8,13 @@
 #include <QOpenGLFunctions>
 #include <QOpenGLWidget>
 #include <QInputDialog>
+#include <QElapsedTimer>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPen>
 #include <QtWidgets/qwidget.h>
+#include <functional>
+#include <future>
 
 #include "imagedetect.h"
 #include "trackpointproperty.h"
@@ -35,6 +38,7 @@ public:
     void setShowPointSeriesLabel(bool showPointSeriesLabel) { this->showPointSeriesString = showPointSeriesLabel; }
     void setSinglePointSeries(bool singlePointSeries) { this->singlePointsOnly = singlePointSeries; }
     void setCrosshairState(bool crosshairState) {crosshairActivate = crosshairState;}
+    void setClickHandler(std::function<void()> handler) { clickHandler = std::move(handler); }
 
     const OpenGL::Texture* getTexture() { return &this->texture; }
     unsigned int getNumSubImagesX() { return this->numImageGroupsX; }
@@ -114,6 +118,28 @@ private:
     int selectedPoint = -1;
     bool showPointSeriesString = false;
     bool singlePointsOnly = false; // how many points per sub-region of image
+    std::function<void()> clickHandler;
+    QElapsedTimer trackPointProcessingTimer;
+    struct TrackPointProcessingResult {
+        bool hasFilteredImage = false;
+        std::vector<unsigned char> filteredImage;
+        std::vector<ImPoint> initialPoints;
+        std::vector<ImPoint> finalPoints;
+    };
+    std::future<TrackPointProcessingResult> trackPointFuture;
+    std::vector<ImPoint> cachedInitialPoints;
+    std::vector<ImPoint> cachedFinalPoints;
+    bool trackPointWorkerRunning = false;
+    bool lastTrackPointPreview = false;
+    bool lastFilteredImagePreview = false;
+    bool lastRemoveDuplicates = false;
+    bool lastShowCoordinates = false;
+    bool lastShowMinSepCircle = false;
+    int lastThresholdValue = -1;
+    int lastSubwinValue = -1;
+    int lastMinPointValue = -1;
+    int lastMaxPointValue = -1;
+    int lastMinSepValue = -1;
 
     void dragBoundingArea();
     void removeBoundingArea(QPointF& mousePos);
@@ -122,6 +148,7 @@ private:
     int getClosestPoint(const QPointF& pos);
     void updateView();
     QString createPointLabelDialog();
+    bool trackPointSettingsChanged() const;
 };
 
 #endif

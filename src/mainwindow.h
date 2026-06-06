@@ -66,6 +66,7 @@ public:
     Ui::MainWindow *getUi();
     std::vector<AbstractCameraManager*> getCameraManagers();
     int getSelectedCameraManager();
+    void selectCameraFromLiveView(const QModelIndex &index);
 
     /** THREAD METHODS **/
     void startCameraDetection(SystemManager *sm);

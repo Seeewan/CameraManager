@@ -238,6 +238,7 @@ class AbstractCameraManager : public QObject {
         void cameraTree_recursiveSetProperty(QStandardItem* parent, CameraManager::CameraProperty* prop);
         void cameraTree_recursiveSetSpinProperty(QStandardItem* parent, CameraManagerSpin::SpinCameraProperty* prop);
         void cameraTree_getCameraList(QStandardItem* parent, std::vector<QStandardItem*> *list);
+        QString cameraDisplayTitle(QStandardItem* item) const;
         AbstractCamera* getSelectedCamera();
         QString buildCameraDeviceKey(AbstractCamera* camera) const;
         QString getDefaultCameraName(const QString& deviceKey);

@@ -1,5 +1,27 @@
 
 #include "imageopenglwidget.h"
+#include <chrono>
+
+namespace {
+const int TRACKPOINT_PREVIEW_INTERVAL_MS = 50;
+}
+
+bool ImageOpenGLWidget::trackPointSettingsChanged() const {
+    if (trackPointProperty == nullptr) {
+        return false;
+    }
+
+    return lastTrackPointPreview != trackPointProperty->trackPointPreview
+            || lastFilteredImagePreview != trackPointProperty->filteredImagePreview
+            || lastRemoveDuplicates != trackPointProperty->removeDuplicates
+            || lastShowCoordinates != trackPointProperty->showCoordinates
+            || lastShowMinSepCircle != trackPointProperty->showMinSepCircle
+            || lastThresholdValue != trackPointProperty->thresholdValue
+            || lastSubwinValue != trackPointProperty->subwinValue
+            || lastMinPointValue != trackPointProperty->minPointValue
+            || lastMaxPointValue != trackPointProperty->maxPointValue
+            || lastMinSepValue != trackPointProperty->minSepValue;
+}
 
 ImageOpenGLWidget::ImageOpenGLWidget(bool colored, TrackPointProperty* trackPointProps, QWidget* parent) : QOpenGLWidget(parent) {
     this->colored = colored;
@@ -10,6 +32,7 @@ ImageOpenGLWidget::ImageOpenGLWidget(bool colored, TrackPointProperty* trackPoin
     bufferSize = 0;
     imageWidth = 0;
     imageHeight = 0;
+    newImageReady = false;
     enableSubImages = true;
     showMouseOverCoordinateLabel = true;
     showMouseCross = true;
@@ -36,6 +59,9 @@ ImageOpenGLWidget::ImageOpenGLWidget(bool colored, TrackPointProperty* trackPoin
 }
 
 ImageOpenGLWidget::~ImageOpenGLWidget() {
+    if (trackPointWorkerRunning && trackPointFuture.valid()) {
+        trackPointFuture.wait();
+    }
     delete imageDetect;
 }
 
@@ -120,37 +146,106 @@ void ImageOpenGLWidget::paintGL() {
         }
     }
 
-    if (imageDetect != nullptr && trackPointProperty != nullptr) {
-        imageDetect->setThreshold(trackPointProperty->thresholdValue);
-        imageDetect->setMinPix(trackPointProperty->minPointValue);
-        imageDetect->setMaxPix(trackPointProperty->maxPointValue);
-        imageDetect->setSubwinSize(trackPointProperty->subwinValue);
-        imageDetect->setMinSep(trackPointProperty->minSepValue);
+    if (trackPointWorkerRunning && trackPointFuture.valid()
+            && trackPointFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        TrackPointProcessingResult result = trackPointFuture.get();
+        cachedInitialPoints = std::move(result.initialPoints);
+        cachedFinalPoints = std::move(result.finalPoints);
+        if (result.hasFilteredImage && !result.filteredImage.empty()) {
+            texture.updateTexture(result.filteredImage.data(), static_cast<unsigned int>(result.filteredImage.size()));
+        }
+        trackPointWorkerRunning = false;
+    }
 
-        if (trackPointProperty->filteredImagePreview || trackPointProperty->trackPointPreview) {
-            unsigned char* copyBuffer = new unsigned char[bufferSize];
-            memcpy(copyBuffer, imgBuffer, bufferSize);
-            imageDetect->setImage(copyBuffer);
+    if (trackPointProperty != nullptr) {
+        const bool previewEnabled = trackPointProperty->filteredImagePreview || trackPointProperty->trackPointPreview;
+        const bool settingsChanged = trackPointSettingsChanged();
+        const bool canReprocessNow = settingsChanged
+                || !trackPointProcessingTimer.isValid()
+                || trackPointProcessingTimer.elapsed() >= TRACKPOINT_PREVIEW_INTERVAL_MS;
+
+        if (previewEnabled && newImageReady && canReprocessNow && !trackPointWorkerRunning) {
+            std::vector<unsigned char> frame(imgBuffer, imgBuffer + bufferSize);
+            const unsigned int frameBufferSize = bufferSize;
+            const unsigned int frameWidth = imageWidth;
+            const unsigned int frameHeight = imageHeight;
+            const bool runFilteredPreview = trackPointProperty->filteredImagePreview;
+            const bool runTrackPointPreview = trackPointProperty->trackPointPreview;
+            const bool runRemoveDuplicates = trackPointProperty->removeDuplicates;
+            const int thresholdValue = trackPointProperty->thresholdValue;
+            const int minPointValue = trackPointProperty->minPointValue;
+            const int maxPointValue = trackPointProperty->maxPointValue;
+            const int subwinValue = trackPointProperty->subwinValue;
+            const int minSepValue = trackPointProperty->minSepValue;
+
+            trackPointFuture = std::async(std::launch::async,
+                [frame = std::move(frame), frameBufferSize, frameWidth, frameHeight,
+                 runFilteredPreview, runTrackPointPreview, runRemoveDuplicates,
+                 thresholdValue, minPointValue, maxPointValue, subwinValue, minSepValue]() mutable {
+                    TrackPointProcessingResult result;
+                    ImageDetect detector(frameWidth, frameHeight);
+                    detector.setThreshold(thresholdValue);
+                    detector.setMinPix(minPointValue);
+                    detector.setMaxPix(maxPointValue);
+                    detector.setSubwinSize(subwinValue);
+                    detector.setMinSep(minSepValue);
+                    detector.setImage(frame.data());
+
+                    if (runFilteredPreview && !runTrackPointPreview) {
+                        detector.imageRemoveBackground();
+                    }
+
+                    if (runTrackPointPreview) {
+                        detector.imageDetectPoints();
+                        const int initCount = detector.getInitNumPoints();
+                        ImPoint* initPoints = detector.getInitPoints();
+                        result.initialPoints.assign(initPoints, initPoints + initCount);
+
+                        if (runRemoveDuplicates) {
+                            detector.removeDuplicatePoints();
+                            const int finalCount = detector.getFinalNumPoints();
+                            ImPoint* finalPoints = detector.getFinalPoints();
+                            result.finalPoints.assign(finalPoints, finalPoints + finalCount);
+                        }
+                    }
+
+                    if (runFilteredPreview) {
+                        unsigned char* filteredImage = detector.getFilteredImage();
+                        result.filteredImage.assign(filteredImage, filteredImage + frameBufferSize);
+                        result.hasFilteredImage = true;
+                    }
+
+                    detector.setImage(nullptr);
+                    return result;
+                }
+            );
+            trackPointWorkerRunning = true;
+            trackPointProcessingTimer.restart();
         }
 
-
-        if (trackPointProperty->filteredImagePreview) {
-            imageDetect->imageRemoveBackground();
-            texture.updateTexture(imageDetect->getFilteredImage(), bufferSize);
-        }
-
-        if (trackPointProperty->trackPointPreview) {
-            imageDetect->imageDetectPoints();
-            if (!trackPointProperty->filteredImagePreview) texture.updateTexture(imgBuffer, bufferSize);
-        }
-        if (!trackPointProperty->trackPointPreview && !trackPointProperty->filteredImagePreview) {
+        if (!previewEnabled && newImageReady) {
+            texture.updateTexture(imgBuffer, bufferSize);
+        } else if (previewEnabled && newImageReady && !trackPointProperty->filteredImagePreview) {
+            // Keep live video fluid while reusing the most recent TrackPoint overlay.
             texture.updateTexture(imgBuffer, bufferSize);
         }
-        delete[] imageDetect->getImage();
-        imageDetect->setImage(nullptr);
+
+        lastTrackPointPreview = trackPointProperty->trackPointPreview;
+        lastFilteredImagePreview = trackPointProperty->filteredImagePreview;
+        lastRemoveDuplicates = trackPointProperty->removeDuplicates;
+        lastShowCoordinates = trackPointProperty->showCoordinates;
+        lastShowMinSepCircle = trackPointProperty->showMinSepCircle;
+        lastThresholdValue = trackPointProperty->thresholdValue;
+        lastSubwinValue = trackPointProperty->subwinValue;
+        lastMinPointValue = trackPointProperty->minPointValue;
+        lastMaxPointValue = trackPointProperty->maxPointValue;
+        lastMinSepValue = trackPointProperty->minSepValue;
     } else {
-        texture.updateTexture(imgBuffer, bufferSize);
+        if (newImageReady) {
+            texture.updateTexture(imgBuffer, bufferSize);
+        }
     }
+    newImageReady = false;
     
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glClearColor(1, 1, 1, 1);
@@ -383,22 +478,13 @@ void ImageOpenGLWidget::paintGL() {
         }
     }
 
-    if (imageDetect != nullptr && trackPointProperty != nullptr) {
+    if (trackPointProperty != nullptr) {
         if (trackPointProperty->trackPointPreview) {
-            ImPoint* points;
-            int numPoints;
-            if (trackPointProperty->removeDuplicates) {
-                imageDetect->removeDuplicatePoints();
-                points = imageDetect->getFinalPoints();
-                numPoints = imageDetect->getFinalNumPoints();
-            } else {
-                points = imageDetect->getInitPoints();
-                numPoints = imageDetect->getInitNumPoints();
-            }
+            const std::vector<ImPoint>& points = trackPointProperty->removeDuplicates ? cachedFinalPoints : cachedInitialPoints;
             int crossWingSize = (int) (height() / 75);
             if (trackPointProperty->showMinSepCircle) crossWingSize = imageToScreenCoordX * trackPointProperty->minSepValue;
             glLineWidth(1);
-            for (int i = 0; i < numPoints; i++) {
+            for (int i = 0; i < points.size(); i++) {
                 double xPos = ((double) points[i].x * imageToScreenCoordX);
                 double yPos = ((double) points[i].y * imageToScreenCoordY);
 
@@ -601,18 +687,9 @@ void ImageOpenGLWidget::paintGL() {
             glEnd();
             glColor4f(1, 1, 1, 1);
 
-            if (imageDetect != nullptr && trackPointProperty != nullptr) {
+            if (trackPointProperty != nullptr) {
                 if (trackPointProperty->trackPointPreview) {
-                    ImPoint* points;
-                    int numPoints;
-                    if (trackPointProperty->removeDuplicates) {
-                        imageDetect->removeDuplicatePoints();
-                        points = imageDetect->getFinalPoints();
-                        numPoints = imageDetect->getFinalNumPoints();
-                    } else {
-                        points = imageDetect->getInitPoints();
-                        numPoints = imageDetect->getInitNumPoints();
-                    }
+                    const std::vector<ImPoint>& points = trackPointProperty->removeDuplicates ? cachedFinalPoints : cachedInitialPoints;
                     int crossWingSize = 20;
                     if (trackPointProperty->showMinSepCircle) crossWingSize = imageToScreenCoordX * trackPointProperty->minSepValue;
                     double scaleWidth = imageToScreenCoordX;
@@ -621,7 +698,7 @@ void ImageOpenGLWidget::paintGL() {
                     double zoomHalfSizeInImageY = (zoomSize * screenToImageCoordY) / (2 * zoomFactor);
                     double adjustX = ((mPos.x() + scaledImageArea.left()) + zoomSize > width()) ? -zoomSize : zoomSize;
                     double adjustY = ((mPos.y() + scaledImageArea.top()) + zoomSize > height()) ? -zoomSize : zoomSize;
-                    for (int i = 0; i < numPoints; i++) {
+                    for (int i = 0; i < points.size(); i++) {
                         if (points[i].x > mousePosInImage.x() + zoomHalfSizeInImageX || points[i].x < mousePosInImage.x() - zoomHalfSizeInImageX) continue;
                         if (points[i].y > mousePosInImage.y() + zoomHalfSizeInImageY || points[i].y < mousePosInImage.y() - zoomHalfSizeInImageY) continue;
 
@@ -693,6 +770,9 @@ void ImageOpenGLWidget::leaveEvent(QEvent *) {
 void ImageOpenGLWidget::mousePressEvent(QMouseEvent* event) {
     QOpenGLWidget::mousePressEvent(event);
     if (event->button() == Qt::MouseButton::LeftButton) {
+        if (clickHandler) {
+            clickHandler();
+        }
         leftMouseButtonDown = true;
         showZoomArea = true;
         mouseDragStart = event->position() - scaledImageArea.topLeft();
